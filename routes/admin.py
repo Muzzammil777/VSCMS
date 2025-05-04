@@ -27,30 +27,17 @@ def login_admin(user: UserLogin):
     return {"access_token": token, "token_type": "bearer"}
 
 @router.get("/service_requests")
-def get_all_service_requests(user=Depends(get_current_user)):
+def get_service_requests(user=Depends(get_current_user)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view service requests")
-    
-    # Fetch all service requests
-    requests = list(db.service_requests.find())
-    
-    # Exclude service requests with completed transactions
-    filtered_requests = []
-    for req in requests:
-        req["_id"] = str(req["_id"])
-        req["customer_id"] = str(req.get("customer_id", ""))
-        if "bill" in req:
-            req["bill"]["amount"] = float(req["bill"]["amount"])  # Ensure amount is a float
-        
-        # Check if the transaction for this service request is completed
-        completed_transaction = db.transactions.find_one({
-            "service_request_id": str(req["_id"]),
-            "status": "completed"
-        })
-        if not completed_transaction:
-            filtered_requests.append(req)  # Add only non-completed transactions
 
-    return {"service_requests": filtered_requests}
+    # Fetch service requests and convert ObjectId to string
+    service_requests = list(db.service_requests.find())
+    for request in service_requests:
+        request["_id"] = str(request["_id"])  # Convert ObjectId to string
+        if "customer_id" in request:
+            request["customer_id"] = str(request["customer_id"])  # Convert customer_id if present
+    return {"service_requests": service_requests}
 
 @router.post("/update_service_status/{request_id}")
 def update_service_status(request_id: str, payload: dict, user=Depends(get_current_user)):
@@ -98,9 +85,9 @@ def get_all_completed_transactions(user=Depends(get_current_user)):
     
     transactions = list(db.transactions.find({"status": "completed"}))
     for transaction in transactions:
-        transaction["_id"] = str(transaction["_id"])
-        transaction["customer_id"] = str(transaction["customer_id"])
-        transaction["service_request_id"] = str(transaction["service_request_id"])
+        transaction["_id"] = str(transaction["_id"])  # Convert ObjectId to string
+        transaction["customer_id"] = str(transaction["customer_id"])  # Convert customer_id
+        transaction["service_request_id"] = str(transaction["service_request_id"])  # Convert service_request_id
     return {"completed_transactions": transactions}
 
 class BillModel(BaseModel):
@@ -127,3 +114,70 @@ def generate_bill(bill: BillModel, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Failed to generate bill")
 
     return {"message": "Bill generated successfully"}
+
+@router.post("/record_inventory/{request_id}")
+def record_inventory(request_id: str, inventory: dict, user=Depends(get_current_user)):
+    if user["role"] != "mechanic":
+        raise HTTPException(status_code=403, detail="Only mechanics can record inventory usage")
+    
+    result = db.service_requests.update_one(
+        {"_id": ObjectId(request_id)},
+        {"$push": {"inventories": inventory}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Service request not found")
+    return {"message": "Inventory recorded successfully"}
+
+@router.get("/completed_requests")
+def get_completed_requests(user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can view completed requests")
+    
+    # Fetch completed service requests and convert ObjectId to string
+    requests = list(db.service_requests.find({"status": "completed"}))
+    for req in requests:
+        req["_id"] = str(req["_id"])  # Convert ObjectId to string
+        if "customer_id" in req:
+            req["customer_id"] = str(req["customer_id"])  # Convert customer_id if present
+    return {"completed_requests": requests}
+
+class VerifyRequestModel(BaseModel):
+    verified: bool
+
+@router.post("/verify_request/{request_id}")
+def verify_request(request_id: str, request: VerifyRequestModel, user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can verify requests")
+
+    # Check if the service request exists
+    service_request = db.service_requests.find_one({"_id": ObjectId(request_id)})
+    if not service_request:
+        raise HTTPException(status_code=404, detail="Service request not found")
+
+    # Update the status based on verification
+    new_status = "verified" if request.verified else "rejected"
+    db.service_requests.update_one(
+        {"_id": ObjectId(request_id)},
+        {"$set": {"status": new_status}}
+    )
+
+    return {"message": f"Service request {new_status} successfully"}
+
+@router.post("/verify_service_request/{request_id}")
+def verify_service_request(request_id: str, request: VerifyRequestModel, user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can verify service requests")
+
+    # Check if the service request exists
+    service_request = db.service_requests.find_one({"_id": ObjectId(request_id)})
+    if not service_request:
+        raise HTTPException(status_code=404, detail="Service request not found")
+
+    # Update the status based on verification
+    new_status = "verified" if request.verified else "rejected"
+    db.service_requests.update_one(
+        {"_id": ObjectId(request_id)},
+        {"$set": {"status": new_status}}
+    )
+
+    return {"message": f"Service request {new_status} successfully"}

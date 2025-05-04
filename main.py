@@ -1,10 +1,12 @@
-import os
 from fastapi import FastAPI
-from routes import customer, mechanic, admin
+from routes.customer import router as customer_router
+from routes import mechanic, admin
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
-app.include_router(customer.router)
+
+# Register the customer router
+app.include_router(customer_router)
 app.include_router(mechanic.router)
 app.include_router(admin.router)
 
@@ -18,8 +20,3 @@ app.add_middleware(
 @app.get("/")
 def home():
     return {"message": "Vehicle Service Center API is live"}
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Render injects PORT env variable
-    uvicorn.run("main:app", host="0.0.0.0", port=port)

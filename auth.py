@@ -26,15 +26,17 @@ def create_access_token(data: dict):
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     from database import db
-    credentials_exception = HTTPException(status_code=401, detail="Invalid credentials")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = db.users.find_one({"email": email})
-    if user is None:
-        raise credentials_exception
-    return user
+        print(f"Decoded Payload: {payload}")  # Debug log
+        user_email = payload.get("sub")
+        if user_email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user = db.users.find_one({"email": user_email})
+        print(f"User Found: {user}")  # Debug log
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except JWTError as e:
+        print(f"JWT Error: {e}")  # Debug log
+        raise HTTPException(status_code=401, detail="Invalid token")
